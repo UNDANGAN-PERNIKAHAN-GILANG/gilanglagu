@@ -36,7 +36,17 @@ app.get('/api/search',async(req,res)=>{
     Object.entries({part:'snippet',type:'video',videoCategoryId:'10',maxResults:'12',q,key:YT_KEY}).forEach(([k,v])=>u.searchParams.set(k,v));
     const r=await fetch(u); const data=await r.json();
     if(!r.ok)throw new Error(data.error?.message||'Pencarian YouTube gagal');
-    res.json((data.items||[]).map(x=>({id:x.id.videoId,title:x.snippet.title,channel:x.snippet.channelTitle,thumbnail:x.snippet.thumbnails?.high?.url||x.snippet.thumbnails?.default?.url})));
+    const items=data.items||[];
+    const ids=items.map(x=>x.id.videoId).filter(Boolean);
+    let durations={};
+    if(ids.length){
+      const du=new URL('https://www.googleapis.com/youtube/v3/videos');
+      Object.entries({part:'contentDetails',id:ids.join(','),key:YT_KEY}).forEach(([k,v])=>du.searchParams.set(k,v));
+      const dr=await fetch(du);const dd=await dr.json();
+      if(!dr.ok)throw new Error(dd.error?.message||'Gagal mengambil durasi video');
+      durations=Object.fromEntries((dd.items||[]).map(v=>[v.id,v.contentDetails?.duration||'']));
+    }
+    res.json(items.map(x=>({id:x.id.videoId,title:x.snippet.title,channel:x.snippet.channelTitle,thumbnail:x.snippet.thumbnails?.high?.url||x.snippet.thumbnails?.default?.url,duration:durations[x.id.videoId]||''})));
   }catch(e){res.status(502).json({error:e.message})}
 });
 
