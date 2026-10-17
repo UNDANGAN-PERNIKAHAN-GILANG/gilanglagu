@@ -45,17 +45,17 @@ app.get('/api/download',async(req,res)=>{
   if(!/^[A-Za-z0-9_-]{11}$/.test(videoId))return res.status(400).json({error:'ID video tidak valid.'});
   if(!RAPID_KEY)return res.status(503).json({error:'RAPIDAPI_KEY belum dipasang pada environment backend.'});
   try{
-    const u=new URL(`https://${RAPI_HOST}/mp3`);
-    u.searchParams.set('url',`https://www.youtube.com/watch?v=${videoId}`);
-    const r=await fetch(u,{headers:{accept:'*/*','x-rapidapi-host':RAPI_HOST,'x-rapidapi-key':RAPID_KEY}});
+    // Search-result playback/download uses the newer API host, same endpoint as the working media downloader.
+    const r=await fetch(`https://${MEDIA_HOST}/youtube/download`,{method:'POST',headers:{...rapidHeaders(),'content-type':'application/json'},body:JSON.stringify({url:`https://www.youtube.com/watch?v=${videoId}`,format:'mp3'})});
     const data=await r.json().catch(()=>null);
-    if(!r.ok)throw new Error(data?.message||data?.error||`RapidAPI HTTP ${r.status}`);
-    if(!data?.success||typeof data.download!=='string')throw new Error(data?.message||data?.error||'Respons API MP3 tidak berisi link download.');
-    const fileUrl=new URL(data.download);
+    if(!r.ok||data?.ok===false||data?.success===false)throw new Error(data?.message||data?.error||`RapidAPI HTTP ${r.status}`);
+    const raw=data?.download_url||data?.download||data?.url||data?.data?.download_url||data?.data?.download||data?.data?.url;
+    if(typeof raw!=='string')throw new Error('Respons API MP3 tidak berisi download_url.');
+    const fileUrl=new URL(raw);
     if(fileUrl.protocol!=='https:')throw new Error('URL audio tidak valid.');
     const audio=await fetch(fileUrl);
     if(!audio.ok||!audio.body)throw new Error(`Server audio membalas HTTP ${audio.status}`);
-    res.setHeader('content-type',audio.headers.get('content-type')||'audio/mpeg');
+    res.setHeader('content-type','audio/mpeg');
     res.setHeader('content-disposition',`attachment; filename="gudang-lagu-${videoId}.mp3"`);
     const {Readable}=await import('node:stream');Readable.fromWeb(audio.body).pipe(res);
   }catch(e){res.status(502).json({error:e.message})}
