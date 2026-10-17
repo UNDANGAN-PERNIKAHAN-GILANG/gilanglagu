@@ -9,7 +9,10 @@ app.use(express.static(path.join(root,'public')));
 const port=process.env.PORT||3000;
 const YT_KEY=process.env.YOUTUBE_API_KEY||process.env.YOUTUBE_APIKEY;
 const RAPID_KEY=process.env.RAPIDAPI_KEY;
-const RAPID_HOST=process.env.RAPIDAPI_HOST||'yt-search-and-download-mp3.p.rapidapi.com';
+// Satu RAPIDAPI_HOST dipakai untuk endpoint YouTube/TikTok/Instagram pada API baru.
+const MEDIA_HOST=process.env.RAPIDAPI_HOST||'instagram-downloader-download-instagram-videos-stories1.p.rapidapi.com';
+// Host lama khusus endpoint MP3 /api/download.
+const RAPI_HOST=process.env.RAPI_HOST||'yt-search-and-download-mp3.p.rapidapi.com';
 
 app.get('/api/suggest',async(req,res)=>{
   const q=String(req.query.q||'').trim().slice(0,100);
@@ -42,13 +45,14 @@ app.get('/api/download',async(req,res)=>{
   if(!/^[A-Za-z0-9_-]{11}$/.test(videoId))return res.status(400).json({error:'ID video tidak valid.'});
   if(!RAPID_KEY)return res.status(503).json({error:'RAPIDAPI_KEY belum dipasang pada environment backend.'});
   try{
-    const r=await fetch(`https://${MEDIA_HOST}/youtube/download`,{method:'POST',headers:{...rapidHeaders(),'content-type':'application/json'},body:JSON.stringify({url:`https://www.youtube.com/watch?v=${videoId}`,format:'mp3'})});
+    const u=new URL(`https://${RAPI_HOST}/mp3`);
+    u.searchParams.set('url',`https://www.youtube.com/watch?v=${videoId}`);
+    const r=await fetch(u,{headers:{accept:'*/*','x-rapidapi-host':RAPI_HOST,'x-rapidapi-key':RAPID_KEY}});
     const data=await r.json().catch(()=>null);
-    if(!r.ok||data?.ok===false)throw new Error(data?.message||data?.error||`RapidAPI HTTP ${r.status}`);
-    const raw=data?.download_url||data?.download;
-    if(typeof raw!=='string')throw new Error('Respons API tidak berisi download_url.');
-    const fileUrl=new URL(raw);
-    if(!['https:','http:'].includes(fileUrl.protocol))throw new Error('URL audio tidak valid.');
+    if(!r.ok)throw new Error(data?.message||data?.error||`RapidAPI HTTP ${r.status}`);
+    if(!data?.success||typeof data.download!=='string')throw new Error(data?.message||data?.error||'Respons API MP3 tidak berisi link download.');
+    const fileUrl=new URL(data.download);
+    if(fileUrl.protocol!=='https:')throw new Error('URL audio tidak valid.');
     const audio=await fetch(fileUrl);
     if(!audio.ok||!audio.body)throw new Error(`Server audio membalas HTTP ${audio.status}`);
     res.setHeader('content-type',audio.headers.get('content-type')||'audio/mpeg');
@@ -57,7 +61,6 @@ app.get('/api/download',async(req,res)=>{
   }catch(e){res.status(502).json({error:e.message})}
 });
 
-const MEDIA_HOST='instagram-downloader-download-instagram-videos-stories1.p.rapidapi.com';
 function rapidHeaders(){return {'x-rapidapi-host':MEDIA_HOST,'x-rapidapi-key':RAPID_KEY,accept:'application/json'}}
 app.post('/api/media/download',async(req,res)=>{
   const platform=String(req.body?.platform||'').toLowerCase();
